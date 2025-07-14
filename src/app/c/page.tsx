@@ -1,46 +1,65 @@
 "use client";
 import { useState } from "react";
-import { Search, MessageCircle, Plus, MoreVertical } from "lucide-react";
+import { Search, MessageCircle, Plus, MoreVertical, Loader2 } from "lucide-react";
 import { ConversationItem } from "@/components/chat/ConversationItem";
-
-// Mock data per le conversazioni
-const mockConversations = [
-  {
-    id: "1",
-    title: "Nuova Fattura - Alfa Srl",
-    lastMessage: "Perfetto! Ho raccolto tutti i dati necessari per la fattura.",
-    timestamp: "2024-01-15T10:30:00Z",
-    unreadCount: 2,
-    isActive: false,
-  },
-  {
-    id: "2", 
-    title: "Consulenza Fiscale",
-    lastMessage: "Hai bisogno di aiuto con la fatturazione?",
-    timestamp: "2024-01-15T09:15:00Z",
-    unreadCount: 0,
-    isActive: false,
-  },
-  {
-    id: "3",
-    title: "Fattura Beta Spa",
-    lastMessage: "Sto elaborando i dati per la fattura di Beta Spa...",
-    timestamp: "2024-01-14T16:45:00Z",
-    unreadCount: 1,
-    isActive: false,
-  },
-];
-
-
+import { useChats } from "@/hooks/useChats";
+import { useRouter } from "next/navigation";
 
 export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeConversation] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const { chats, loading, error, createChat } = useChats();
+  const router = useRouter();
 
-  const filteredConversations = mockConversations.filter(conv =>
-    conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    conv.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredConversations = chats.filter(chat =>
+    (chat.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (chat.lastMessage || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleCreateChat = async () => {
+    try {
+      setIsCreating(true);
+      const newChat = await createChat();
+      // Redirect alla nuova chat
+      router.push(`/c/${newChat.id}`);
+    } catch (err) {
+      console.error('Errore nella creazione della chat:', err);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Caricamento chat...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <MessageCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
+            Errore nel caricamento
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Riprova
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -54,8 +73,17 @@ export default function ChatPage() {
                 Chat AI
               </h1>
               <div className="flex items-center gap-2">
-                <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
-                  <Plus className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <button 
+                  onClick={handleCreateChat}
+                  disabled={isCreating}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50"
+                  title="Nuova chat"
+                >
+                  {isCreating ? (
+                    <Loader2 className="w-5 h-5 text-gray-600 dark:text-gray-400 animate-spin" />
+                  ) : (
+                    <Plus className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                  )}
                 </button>
                 <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
                   <MoreVertical className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -71,7 +99,7 @@ export default function ChatPage() {
                 placeholder="Cerca conversazioni..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-fit min-w-64 pl-10 pr-4 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -99,9 +127,17 @@ export default function ChatPage() {
                   }
                 </p>
                 {!searchQuery && (
-                  <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors">
-                    <Plus className="w-4 h-4" />
-                    Nuova Chat
+                  <button 
+                    onClick={handleCreateChat}
+                    disabled={isCreating}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {isCreating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                    {isCreating ? 'Creazione...' : 'Nuova Chat'}
                   </button>
                 )}
               </div>
@@ -122,9 +158,17 @@ export default function ChatPage() {
               Seleziona una conversazione dalla lista per iniziare a chattare con l&apos;AI, 
               oppure crea una nuova conversazione per generare fatture in modo semplice e veloce.
             </p>
-            <button className="mt-6 flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors mx-auto">
-              <Plus className="w-5 h-5" />
-              Inizia Nuova Chat
+            <button 
+              onClick={handleCreateChat}
+              disabled={isCreating}
+              className="mt-6 flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors mx-auto disabled:opacity-50"
+            >
+              {isCreating ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Plus className="w-5 h-5" />
+              )}
+              {isCreating ? 'Creazione Chat...' : 'Inizia Nuova Chat'}
             </button>
           </div>
         </div>

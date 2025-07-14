@@ -1,15 +1,8 @@
 import Link from "next/link";
-
-interface Conversation {
-  id: string;
-  title: string;
-  lastMessage: string;
-  timestamp: string;
-  unreadCount: number;
-}
+import { ChatWithLastMessage } from '@/lib/supabase/types';
 
 interface ConversationItemProps {
-  conversation: Conversation;
+  conversation: ChatWithLastMessage;
   isActive: boolean;
 }
 
@@ -28,6 +21,11 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
     return "ora";
   };
 
+  // Usa edited_at se disponibile, altrimenti created_at
+  const displayTime = conversation.edited_at || conversation.created_at;
+  const displayTitle = conversation.name || 'Chat senza titolo';
+  const displayMessage = conversation.lastMessage || 'Nessun messaggio';
+
   return (
     <Link href={`/c/${conversation.id}`}>
       <div className={`px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-200 cursor-pointer border-l-4 ${
@@ -37,14 +35,21 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
       }`}>
         <div className="flex items-center justify-between mb-0.5">
           <h3 className="font-medium text-gray-900 dark:text-white text-sm truncate pr-2">
-            {conversation.title}
+            {displayTitle}
           </h3>
-          <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-            {formatTime(conversation.timestamp)}
-          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {formatTime(displayTime)}
+            </span>
+            {conversation.unreadCount && conversation.unreadCount > 0 && (
+              <span className="bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[1.25rem] h-5 flex items-center justify-center">
+                {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+              </span>
+            )}
+          </div>
         </div>
         <p className="text-xs text-gray-600 dark:text-gray-400 truncate leading-relaxed">
-          {conversation.lastMessage}
+          {displayMessage}
         </p>
       </div>
     </Link>
