@@ -1,12 +1,15 @@
+"use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ChatWithLastMessage } from '@/lib/supabase/types';
 
 interface ConversationItemProps {
   conversation: ChatWithLastMessage;
-  isActive: boolean;
 }
 
-export function ConversationItem({ conversation, isActive }: ConversationItemProps) {
+export function ConversationItem({ conversation }: ConversationItemProps) {
+  const pathname = usePathname();
+  const isActive = pathname === `/c/${conversation.id}`;
   const formatTime = (timestamp: string) => {
     const now = new Date();
     const date = new Date(timestamp);
@@ -41,11 +44,6 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {formatTime(displayTime)}
             </span>
-            {conversation.unreadCount && conversation.unreadCount > 0 && (
-              <span className="bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[1.25rem] h-5 flex items-center justify-center">
-                {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
-              </span>
-            )}
           </div>
         </div>
         <p className="text-xs text-gray-600 dark:text-gray-400 truncate leading-relaxed">

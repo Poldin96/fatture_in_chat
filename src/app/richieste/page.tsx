@@ -4,6 +4,7 @@ import { FilePlus, Clock, CheckCircle, XCircle, FileText, Receipt, Building2, In
 import { useEntity } from "@/contexts/EntityContext";
 import { AddRequestModal } from "@/components/AddRequestModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RequestDetailSheet } from "@/components/RequestDetailSheet";
 import { Request, RequestType, RequestBody, REQUEST_TYPES, isFatturaBody, isCostoBody } from "@/lib/supabase/requestTypes";
 
 export default function RichiestePage() {
@@ -19,6 +20,12 @@ export default function RichiestePage() {
     requestId: '',
     requestName: '',
     isDeleting: false
+  });
+
+  // Stato per il sheet dei dettagli
+  const [detailsSheet, setDetailsSheet] = useState({
+    isOpen: false,
+    requestId: ''
   });
 
   // Carica le richieste tramite API
@@ -95,6 +102,20 @@ export default function RichiestePage() {
       requestId,
       requestName,
       isDeleting: false
+    });
+  };
+
+  const handleViewDetails = (requestId: string) => {
+    setDetailsSheet({
+      isOpen: true,
+      requestId
+    });
+  };
+
+  const handleCloseDetails = () => {
+    setDetailsSheet({
+      isOpen: false,
+      requestId: ''
     });
   };
 
@@ -328,7 +349,10 @@ export default function RichiestePage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex gap-2">
-                          <button className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200">
+                          <button 
+                            onClick={() => handleViewDetails(request.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+                          >
                             <Info size={14} />
                             <span className="hidden sm:inline">Dettagli</span>
                           </button>
@@ -377,6 +401,13 @@ export default function RichiestePage() {
         cancelText="Annulla"
         confirmVariant="danger"
         isLoading={deleteDialog.isDeleting}
+      />
+
+      {/* Request Details Sheet */}
+      <RequestDetailSheet
+        isOpen={detailsSheet.isOpen}
+        onClose={handleCloseDetails}
+        requestId={detailsSheet.requestId}
       />
     </div>
   );
