@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 // Schema per il tool di creazione fattura
 const createFatturaSchema = z.object({
+  entity_id: z.string().describe('ID dell\'entità per cui creare la fattura'),
   debitore: z.object({
     denominazione: z.string().describe('Nome/ragione sociale del cliente'),
     partitaIva: z.string().optional().describe('Partita IVA (opzionale)'),
@@ -31,7 +32,118 @@ const createFatturaSchema = z.object({
   regimeFiscale: z.string().optional().describe('Regime fiscale (opzionale)')
 })
 
-async function createFattura(params: z.infer<typeof createFatturaSchema>, entityId: string, originalRequest: NextRequest) {
+// Funzione per recuperare le entities dell'utente
+async function getUserEntities(request: NextRequest): Promise<UserEntity[]> {
+  try {
+    const headers: HeadersInit = {}
+    
+    // Passa i cookie della richiesta originale
+    const cookieHeader = request.headers.get('cookie')
+    if (cookieHeader) {
+      headers['cookie'] = cookieHeader
+    }
+
+    // Passa anche l'header Authorization se presente
+    const authHeader = request.headers.get('Authorization')
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
+
+    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/entities`, {
+      method: 'GET',
+      headers
+    })
+
+    if (!response.ok) {
+      console.warn('⚠️ Errore nel recupero entities:', await response.text())
+      return []
+    }
+
+    const data = await response.json()
+    return (data.entities || []) as UserEntity[]
+  } catch (error) {
+    console.warn('⚠️ Errore nel recupero entities:', error)
+    return []
+  }
+}
+
+// Interfaccia per le entities
+interface UserEntity {
+  id: string
+  name: string
+  body?: {
+    partita_iva?: string
+    tipo?: string
+  }
+  role: string
+  created_at?: string
+  updated_at?: string
+}
+
+// Funzione per costruire il system prompt dinamico
+function buildSystemPrompt(entities: UserEntity[], currentDateTime: string) {
+  const entitiesContext = entities.length > 0 
+    ? `
+
+🏢 **ENTITÀ DISPONIBILI:**
+${entities.map(entity => `• **${entity.name}** (ID: ${entity.id})
+  - Ruolo: ${entity.role}
+  - P.IVA: ${entity.body?.partita_iva || 'N/A'}
+  - Tipo: ${entity.body?.tipo || 'N/A'}`).join('\n')}
+
+IMPORTANTE per la creazione fatture:
+- DEVI sempre specificare l'entity_id quando crei una fattura
+- Se l'utente non specifica per quale entità, chiedi di scegliere tra quelle disponibili
+- Se c'è una sola entità disponibile, puoi usarla automaticamente informando l'utente`
+    : `
+
+⚠️ **NESSUNA ENTITÀ DISPONIBILE:**
+L'utente non ha entità associate. Non è possibile creare fatture senza un'entità.
+Suggerisci di creare prima un'entità nella sezione appropriata.`
+
+  return `Sei un assistente AI specializzato nella gestione di fatture per "Fatture in Chat".
+
+⏰ **CONTESTO TEMPORALE:**
+Data e ora attuali: ${currentDateTime}
+
+Il tuo compito è aiutare gli utenti a:
+- Creare fatture con tutti i dati necessari
+- Gestire informazioni sui clienti  
+- Calcolare automaticamente IVA e totali
+- Fornire supporto per la normativa fiscale italiana${entitiesContext}
+
+IMPORTANTE:
+- Quando crei una fattura, assicurati di raccogliere TUTTI i dati obbligatori
+- Calcola automaticamente IVA e importo totale
+- Usa sempre il formato ISO per le date (YYYY-MM-DD)
+- Per le date, considera il contesto temporale fornito
+- Chiedi conferma prima di creare la fattura
+- Sii preciso e professionale
+- SEMPRE dopo aver eseguito un'azione, fornisci un feedback dettagliato all'utente
+- CRITICAMENTE IMPORTANTE: Quando usi un tool, il risultato del tool DEVE essere incluso nella tua risposta finale all'utente
+- OBBLIGATORIO: Dopo aver chiamato create_fattura, devi SEMPRE rispondere con il risultato del tool mostrandolo all'utente
+- Non limitarti a processare il tool in silenzio - mostra SEMPRE il feedback completo nella chat
+
+DATI OBBLIGATORI per una fattura:
+- Entity ID (dall'elenco sopra)
+- Denominazione cliente
+- Indirizzo completo (via, CAP, città, provincia)
+- Numero fattura
+- Data emissione e scadenza
+- Importo imponibile
+- Percentuale IVA
+- Oggetto/descrizione
+- Modalità di pagamento
+
+Rispondi sempre in italiano e usa emoji per rendere più chiara la comunicazione.
+
+FORMATO RISPOSTA: Quando crei una fattura, la tua risposta deve includere:
+1. Il risultato dell'operazione (successo/errore)
+2. I dettagli della fattura creata
+3. Informazioni su dove l'utente può trovare la fattura: ovvero nella sezione Richieste`
+}
+
+async function createFattura(params: z.infer<typeof createFatturaSchema>, originalRequest: NextRequest) {
   try {
     // Calcola automaticamente IVA e totale
     const imponibile = params.imponibile
@@ -73,14 +185,14 @@ async function createFattura(params: z.infer<typeof createFatturaSchema>, entity
       headers['Authorization'] = authHeader
     }
 
-    // Chiama l'API per creare la fattura
+    // Chiama l'API per creare la fattura usando l'entity_id dal parametro
     const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/requests`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         type: REQUEST_TYPES.FATTURA,
         body: fatturaBody,
-        entity_id: entityId
+        entity_id: params.entity_id
       })
     })
 
@@ -114,7 +226,7 @@ async function createFattura(params: z.infer<typeof createFatturaSchema>, entity
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, entityId } = await request.json()
+    const { messages } = await request.json()
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messaggi richiesti mancanti' }, { status: 400 })
@@ -124,9 +236,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nessun messaggio fornito' }, { status: 400 })
     }
 
-    if (!entityId) {
-      return NextResponse.json({ error: 'Entity ID è obbligatorio' }, { status: 400 })
+    // Recupera le entities dell'utente
+    console.log('🏢 Recupero entities dell\'utente...')
+    const userEntities = await getUserEntities(request)
+    console.log(`✅ Trovate ${userEntities.length} entities`)
+
+    // Costruisci il contesto temporale
+    const now = new Date()
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Rome'
     }
+    const currentDateTime = now.toLocaleDateString('it-IT', options)
+    console.log(`🕒 Contesto temporale: ${currentDateTime}`)
+
+    // Costruisci il system prompt dinamico
+    const systemPrompt = buildSystemPrompt(userEntities, currentDateTime)
 
     // Prepara i messaggi per Claude
     const claudeMessages = messages.map((msg: ChatMessage) => ({
@@ -134,73 +264,54 @@ export async function POST(request: NextRequest) {
       content: msg.content
     }))
 
-    // Usa l'AI SDK per lo streaming
+    // Usa l'AI SDK per lo streaming con maxSteps per consentire follow-up
     const result = await streamText({
       model: anthropic('claude-3-5-sonnet-20241022'),
       temperature: 0.7,
-      maxTokens: 1000,
-      system: `Sei un assistente AI specializzato nella gestione di fatture per "Fatture in Chat".
-
-Il tuo compito è aiutare gli utenti a:
-- Creare fatture con tutti i dati necessari
-- Gestire informazioni sui clienti
-- Calcolare automaticamente IVA e totali
-- Fornire supporto per la normativa fiscale italiana
-
-IMPORTANTE:
-- Quando crei una fattura, assicurati di raccogliere TUTTI i dati obbligatori
-- Calcola automaticamente IVA e importo totale
-- Usa sempre il formato ISO per le date (YYYY-MM-DD)
-- Chiedi conferma prima di creare la fattura
-- Sii preciso e professionale
-- SEMPRE dopo aver eseguito un'azione, fornisci un feedback dettagliato all'utente
-- CRITICAMENTE IMPORTANTE: Quando usi un tool, il risultato del tool DEVE essere incluso nella tua risposta finale all'utente
-
-DATI OBBLIGATORI per una fattura:
-- Denominazione cliente
-- Indirizzo completo (via, CAP, città, provincia)
-- Numero fattura
-- Data emissione e scadenza
-- Importo imponibile
-- Percentuale IVA
-- Oggetto/descrizione
-- Modalità di pagamento
-
-Rispondi sempre in italiano e usa emoji per rendere più chiara la comunicazione.
-
-FORMATO RISPOSTA: Quando crei una fattura, la tua risposta deve includere:
-1. Il risultato dell'operazione (successo/errore)
-2. I dettagli della fattura creata
-3. Informazioni su dove l'utente può trovare la fattura`,
+      maxTokens: 1500,
+      maxSteps: 3, // Permette multiple interazioni per follow-up dopo tool execution
+      system: systemPrompt,
       messages: claudeMessages,
       tools: {
         create_fattura: tool({
-          description: 'Crea una nuova fattura. Usa questo tool quando l\'utente vuole generare una fattura con tutti i dati necessari. IMPORTANTE: Dopo aver eseguito questo tool, fornisci SEMPRE un feedback dettagliato all\'utente.',
+          description: 'Crea una nuova fattura. Usa questo tool quando l\'utente vuole generare una fattura con tutti i dati necessari. IMPORTANTE: Devi specificare l\'entity_id. Dopo aver eseguito questo tool, DEVI SEMPRE generare una risposta di follow-up per mostrare il risultato all\'utente.',
           parameters: createFatturaSchema,
           execute: async (params) => {
-            console.log('🔧 Eseguendo tool create_fattura...')
-            const result = await createFattura(params, entityId, request)
-            console.log('✅ Tool eseguito, result:', result)
+            console.log('🔧 Eseguendo tool create_fattura per entity:', params.entity_id)
+            const toolResult = await createFattura(params, request)
+            console.log('✅ Tool eseguito, result:', toolResult)
             
-            if (result.success) {
-              const feedback = `✅ **Fattura creata con successo!**
-
-📄 **Numero**: ${result.summary!.numeroFattura}
-👤 **Cliente**: ${result.summary!.cliente}
-💰 **Importo**: €${result.summary!.imponibile} + IVA ${result.summary!.percentualeIva}% = €${result.summary!.totale.toFixed(2)}
-📅 **Emissione**: ${result.summary!.dataEmissione}
-⏰ **Scadenza**: ${result.summary!.dataScadenza}
-
-La fattura è stata inviata al sistema. Puoi visualizzarla nella sezione "Richieste".`
-              console.log('📤 Feedback generato:', feedback)
-              return feedback
+            if (toolResult.success) {
+              const entityName = userEntities.find(e => e.id === params.entity_id)?.name || 'Entità sconosciuta'
+              
+              // Restituisce un risultato strutturato che l'AI può processare
+              return {
+                success: true,
+                entityName,
+                numeroFattura: toolResult.summary!.numeroFattura,
+                cliente: toolResult.summary!.cliente,
+                imponibile: toolResult.summary!.imponibile,
+                percentualeIva: toolResult.summary!.percentualeIva,
+                totale: toolResult.summary!.totale,
+                dataEmissione: toolResult.summary!.dataEmissione,
+                dataScadenza: toolResult.summary!.dataScadenza,
+                message: 'Fattura creata con successo! Mostra questo risultato all\'utente.'
+              }
             } else {
-              const errorFeedback = `❌ **Errore nella creazione della fattura**: ${result.error}`
-              console.log('❌ Errore feedback:', errorFeedback)
-              return errorFeedback
+              return {
+                success: false,
+                error: toolResult.error,
+                message: 'Si è verificato un errore nella creazione della fattura. Mostra questo errore all\'utente.'
+              }
             }
           }
         })
+      },
+      onStepFinish: ({ stepType, text, toolCalls, toolResults }) => {
+        console.log('🎯 Step finished:', stepType)
+        console.log('📝 Generated text:', text)
+        console.log('🛠️ Tool calls:', toolCalls?.length || 0)
+        console.log('📤 Tool results:', toolResults?.length || 0)
       }
     })
 

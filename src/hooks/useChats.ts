@@ -57,8 +57,16 @@ Come posso aiutarti oggi?`
         throw new Error(data.error || 'Errore nella creazione della chat')
       }
       
-      // Ricarica le chat per includere quella nuova
-      await fetchChats()
+      // Invece di ricaricare tutte le chat, aggiungiamo direttamente la nuova chat allo stato
+      const newChatWithMessage: ChatWithLastMessage = {
+        ...data.chat,
+        lastMessage: welcomeMessage.length > 100 ? welcomeMessage.substring(0, 100) + '...' : welcomeMessage,
+        messageCount: 1,
+        unreadCount: 0
+      }
+      
+      // Aggiungiamo la nuova chat in cima alla lista (più recente)
+      setChats(prevChats => [newChatWithMessage, ...prevChats])
       
       return data.chat
     } catch (err) {

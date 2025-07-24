@@ -24,7 +24,7 @@ export default function Home() {
               <Link href="/auth/login" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm sm:text-base">
                 Accedi
               </Link>
-              <Link href="/chat" className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-200 font-medium text-sm sm:text-base">
+              <Link href="/c" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all duration-200 font-medium text-sm sm:text-base">
                 Chatta con l&apos;AI
               </Link>
             </div>
